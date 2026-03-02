@@ -1,53 +1,15 @@
 // ===== 依赖导入 =====
-use anyhow::Context;
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use once_cell::sync::Lazy;
 use serde::Deserialize;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
-// ===== 应用运行时常量 =====
-pub const APP_ID: &str = "com.jialuo.niripet";
-pub const CAROUSEL_INTERVAL_MS: u64 = 130;
-pub const INPUT_DEBUG_LOG: bool = false;
-pub const DRAG_LONG_PRESS_MS: u64 = 450;
-pub const DRAG_ALLOW_OFFSCREEN: bool = true;
-
-// ===== 动画资源路径默认配置 =====
-pub const ASSETS_BODY_ROOT: &str = "assets/body";
-pub const DEFAULT_HAPPY_IDLE_VARIANTS: &[&str] = &[
-	"Default/Happy",
-];
-pub const DEFAULT_NOMAL_IDLE_ROOT: &str = "Default/Nomal";
-pub const DEFAULT_POOR_CONDITION_IDLE_ROOT: &str = "Default/PoorCondition";
-pub const DEFAULT_ILL_IDLE_ROOT: &str = "Default/Ill";
-pub const STARTUP_ROOT: &str = "StartUP";
-pub const RAISE_DYNAMIC_ROOT: &str = "Raise/Raised_Dynamic";
-pub const RAISE_STATIC_ROOT: &str = "Raise/Raised_Static";
-pub const PINCH_ROOT: &str = "Pinch";
-pub const SHUTDOWN_ROOT: &str = "Shutdown";
-pub const TOUCH_HEAD_ROOT: &str = "Touch_Head";
-pub const TOUCH_BODY_ROOT: &str = "Touch_Body";
-
-// ===== 面板调试默认值 =====
-pub const PANEL_BASIC_STAT_MAX: u32 = 100;
-pub const PANEL_EXPERIENCE_MAX: u32 = 100;
-pub const PANEL_LEVEL_MAX: u32 = 100;
-
-pub const PANEL_DEFAULT_STAMINA: u32 = 80;
-pub const PANEL_DEFAULT_SATIETY: u32 = 70;
-pub const PANEL_DEFAULT_THIRST: u32 = 65;
-pub const PANEL_DEFAULT_MOOD: u32 = 75;
-pub const PANEL_DEFAULT_HEALTH: u32 = 90;
-pub const PANEL_DEFAULT_AFFINITY: u32 = 50;
-pub const PANEL_DEFAULT_EXPERIENCE: u32 = 10;
-pub const PANEL_DEFAULT_LEVEL: u32 = 3;
-
-// ===== 运行时配置文件与监听器 =====
-pub const RUNTIME_CONFIG_FILE: &str = "config.toml";
-
-static CONFIG_WATCHERS: Lazy<Mutex<Vec<RecommendedWatcher>>> = Lazy::new(|| Mutex::new(Vec::new()));
+use super::defaults::{
+	ASSETS_BODY_ROOT, DEFAULT_HAPPY_IDLE_VARIANTS, DEFAULT_ILL_IDLE_ROOT,
+	DEFAULT_NOMAL_IDLE_ROOT, DEFAULT_POOR_CONDITION_IDLE_ROOT, PANEL_BASIC_STAT_MAX,
+	PANEL_DEFAULT_AFFINITY, PANEL_DEFAULT_EXPERIENCE, PANEL_DEFAULT_HEALTH,
+	PANEL_DEFAULT_LEVEL, PANEL_DEFAULT_MOOD, PANEL_DEFAULT_SATIETY, PANEL_DEFAULT_STAMINA,
+	PANEL_DEFAULT_THIRST, PANEL_EXPERIENCE_MAX, PANEL_LEVEL_MAX, PINCH_ROOT,
+	RAISE_DYNAMIC_ROOT, RAISE_STATIC_ROOT, SHUTDOWN_ROOT, STARTUP_ROOT, TOUCH_BODY_ROOT,
+	TOUCH_HEAD_ROOT,
+};
 
 // ===== 面板配置结构 =====
 #[derive(Clone, Debug)]
@@ -85,7 +47,7 @@ impl Default for PanelDebugConfig {
 
 impl PanelDebugConfig {
 	// 归一化配置，确保上下限合法
-	fn sanitized(mut self) -> Self {
+	pub(crate) fn sanitized(mut self) -> Self {
 		self.basic_stat_max = self.basic_stat_max.max(1);
 		self.experience_max = self.experience_max.max(1);
 		self.level_max = self.level_max.max(1);
@@ -105,13 +67,13 @@ impl PanelDebugConfig {
 
 // ===== 配置文件反序列化结构 =====
 #[derive(Debug, Default, Deserialize)]
-struct FileConfig {
-	panel: Option<PanelDebugConfigPartial>,
-	animation: Option<AnimationPathConfigPartial>,
+pub(crate) struct FileConfig {
+	pub(crate) panel: Option<PanelDebugConfigPartial>,
+	pub(crate) animation: Option<AnimationPathConfigPartial>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct PanelDebugConfigPartial {
+pub(crate) struct PanelDebugConfigPartial {
 	basic_stat_max: Option<u32>,
 	experience_max: Option<u32>,
 	level_max: Option<u32>,
@@ -127,7 +89,7 @@ struct PanelDebugConfigPartial {
 
 impl PanelDebugConfigPartial {
 	// 将部分配置覆盖到完整配置
-	fn merge_into(self, mut base: PanelDebugConfig) -> PanelDebugConfig {
+	pub(crate) fn merge_into(self, mut base: PanelDebugConfig) -> PanelDebugConfig {
 		if let Some(value) = self.basic_stat_max {
 			base.basic_stat_max = value;
 		}
@@ -207,7 +169,7 @@ impl Default for AnimationPathConfig {
 
 impl AnimationPathConfig {
 	// 归一化配置，空字符串回退到默认值
-	fn sanitized(mut self) -> Self {
+	pub(crate) fn sanitized(mut self) -> Self {
 		let defaults = AnimationPathConfig::default();
 
 		if self.assets_body_root.trim().is_empty() {
@@ -258,7 +220,7 @@ impl AnimationPathConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct AnimationPathConfigPartial {
+pub(crate) struct AnimationPathConfigPartial {
 	assets_body_root: Option<String>,
 	default_happy_idle_variants: Option<Vec<String>>,
 	default_nomal_idle_root: Option<String>,
@@ -275,7 +237,7 @@ struct AnimationPathConfigPartial {
 
 impl AnimationPathConfigPartial {
 	// 将部分配置覆盖到完整配置
-	fn merge_into(self, mut base: AnimationPathConfig) -> AnimationPathConfig {
+	pub(crate) fn merge_into(self, mut base: AnimationPathConfig) -> AnimationPathConfig {
 		if let Some(value) = self.assets_body_root {
 			base.assets_body_root = value;
 		}
@@ -314,108 +276,4 @@ impl AnimationPathConfigPartial {
 		}
 		base
 	}
-}
-
-// ===== 配置加载与热更新入口 =====
-pub fn runtime_config_path() -> PathBuf {
-	PathBuf::from(RUNTIME_CONFIG_FILE)
-}
-
-fn load_file_config() -> Option<FileConfig> {
-	let path = runtime_config_path();
-	let content = match fs::read_to_string(&path) {
-		Ok(content) => content,
-		Err(err) => {
-			if err.kind() != std::io::ErrorKind::NotFound {
-				eprintln!("读取配置文件失败（{}）：{}", path.display(), err);
-			}
-			return None;
-		}
-	};
-
-	match toml::from_str::<FileConfig>(&content) {
-		Ok(file_config) => Some(file_config),
-		Err(err) => {
-			eprintln!("解析配置文件失败（{}）：{}", path.display(), err);
-			None
-		}
-	}
-}
-
-pub fn load_panel_debug_config() -> PanelDebugConfig {
-	let default_config = PanelDebugConfig::default();
-	load_file_config()
-		.and_then(|file_config| file_config.panel)
-		.unwrap_or_default()
-		.merge_into(default_config)
-		.sanitized()
-}
-
-pub fn load_animation_path_config() -> AnimationPathConfig {
-	let default_config = AnimationPathConfig::default();
-	load_file_config()
-		.and_then(|file_config| file_config.animation)
-		.unwrap_or_default()
-		.merge_into(default_config)
-		.sanitized()
-}
-
-pub fn start_panel_config_watcher<F>(on_change: F) -> anyhow::Result<()>
-where
-	F: Fn() + Send + Sync + 'static,
-{
-	// 监听配置文件所在目录，筛选目标文件变更事件
-	let config_path = runtime_config_path();
-	let watch_target = config_path
-		.parent()
-		.unwrap_or_else(|| Path::new("."))
-		.to_path_buf();
-	let config_file_name = config_path
-		.file_name()
-		.map(|name| name.to_os_string())
-		.unwrap_or_else(|| RUNTIME_CONFIG_FILE.into());
-
-	let mut watcher = RecommendedWatcher::new(
-		move |result: Result<Event, notify::Error>| {
-			let event = match result {
-				Ok(event) => event,
-				Err(err) => {
-					eprintln!("配置监听错误：{}", err);
-					return;
-				}
-			};
-
-			if !matches!(
-				event.kind,
-				EventKind::Create(_)
-					| EventKind::Modify(_)
-					| EventKind::Remove(_)
-					| EventKind::Any
-			) {
-				return;
-			}
-
-			let is_target = event.paths.is_empty()
-				|| event
-					.paths
-					.iter()
-					.any(|path| path.file_name() == Some(config_file_name.as_os_str()));
-			if is_target {
-				on_change();
-			}
-		},
-		notify::Config::default(),
-	)
-	.with_context(|| "创建配置文件监听器失败")?;
-
-	watcher
-		.watch(&watch_target, RecursiveMode::NonRecursive)
-		.with_context(|| format!("监听配置目录失败：{}", watch_target.display()))?;
-
-	let mut watchers = CONFIG_WATCHERS
-		.lock()
-		.map_err(|_| anyhow::anyhow!("配置监听器存储锁被污染"))?;
-	watchers.push(watcher);
-
-	Ok(())
 }

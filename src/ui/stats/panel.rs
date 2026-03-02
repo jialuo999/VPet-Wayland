@@ -1,6 +1,7 @@
 // ===== 依赖导入 =====
 use gtk4::prelude::*;
 use gtk4::{Align, Box, Image, Label, Orientation, Popover, ProgressBar};
+
 use crate::stats::{PetMode, PetStatsService};
 
 // ===== 状态面板组件 =====

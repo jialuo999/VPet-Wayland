@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::config::{load_animation_path_config, AnimationPathConfig, CAROUSEL_INTERVAL_MS};
-use crate::input_region::setup_image_input_region;
+use crate::interaction::setup_image_input_region;
 use crate::stats::{PetMode, PetStatsService};
 
 use super::assets::body_asset_path;

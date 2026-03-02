@@ -15,8 +15,11 @@
 
 - **应用入口层**：`src/main.rs`
   - 启动 GTK 应用、创建窗口、接入交互与菜单、连接动画与状态面板。
-- **配置层**：`src/config.rs`
-  - 维护默认常量、读取 `config.toml`、参数校验（sanitize）、配置热更新监听。
+- **配置层**：`src/config/*`
+  - `defaults.rs`：默认常量（应用 ID、动画间隔、拖拽参数等）。
+  - `loader.rs`：读取 `config.toml` 并返回结构化配置。
+  - `model.rs`：配置数据模型定义。
+  - `watcher.rs`：配置热更新监听。
 - **动画域**：`src/animation/*`
   - `coordinator.rs`：统一调度动画状态与帧推进。
   - `requests.rs`：通过原子变量传递动画请求（drag/pinch/touch/shutdown）。
@@ -24,14 +27,17 @@
   - `assets/*`：动画资源路径与帧收集逻辑。
 - **交互层**：
   - `src/drag.rs`：长按拖拽、捏捏区域判断、窗口跟随与拖拽动画触发。
-  - `src/input_region.rs`：输入区域裁剪、触摸头/身体区域判定、右键菜单。
-- **状态展示层**：`src/stats_panel.rs`
+  - `src/interaction/*`：输入探针、右键菜单、输入区域裁剪、头/身体触摸区域判定。
+- **状态展示层**：`src/ui/stats/panel.rs`
   - 仅负责 GTK 可视化面板渲染（`StatsPanel`）。
 - **状态计算层**：`src/stats/*`
   - `model.rs`：纯数据结构与纯计算函数（`PetStats`、`PetMode`、`InteractType`、模式判断与等级公式）。
   - `food.rs`：投喂项模型（`FoodItem`：name/likability/feeling/strength_food/strength_drink）。
   - `service.rs`：带副作用的状态服务（衰减、投喂、互动、升级、配置上限应用）。
   - `mod.rs`：状态模块统一导出。
+- **设置与窗口层**：
+  - `src/settings/*`：设置模型、设置面板、持久化存储。
+  - `src/window/position.rs`：窗口位置读写与应用。
 
 ### 2.2 资源分层
 
@@ -188,7 +194,7 @@
 ## 7. 关键设计取舍
 
 - **事件与播放解耦**：请求位 + tick 消费，降低回调复杂度。
-- **计算与渲染解耦**：`stats/model.rs` 保持纯计算，`stats_panel.rs` 仅渲染，便于测试与维护。
+- **计算与渲染解耦**：`stats/model.rs` 保持纯计算，`ui/stats/panel.rs` 仅渲染，便于测试与维护。
 - **单线程 UI 安全**：GTK 相关操作在主线程，避免线程访问 UI 风险。
 - **资源路径可配置**：动画目录通过 `config.toml` 管理，便于换皮/重组资源。
 - **输入区域跟帧同步**：提高交互命中精度，但会增加每帧 region 更新成本。

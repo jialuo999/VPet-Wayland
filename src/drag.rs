@@ -13,6 +13,7 @@ use crate::animation::{
 };
 use crate::config::{DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS};
 use crate::stats::{InteractType, PetMode, PetStatsService};
+use crate::window::position::current_window_left_top;
 
 // ===== 拖拽与捏持判定参数（像素坐标基于原始素材） =====
 const DRAG_FOCUS_PIXEL_X: i32 = 581;
@@ -108,42 +109,6 @@ fn is_in_pinch_rect(
     let max_y = PINCH_RECT_Y1.max(PINCH_RECT_Y2);
 
     (min_x..=max_x).contains(&source_x) && (min_y..=max_y).contains(&source_y)
-}
-
-// 读取窗口当前左上角位置，统一用于拖拽结束后持久化
-fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
-    let alloc = window.allocation();
-    let win_w = alloc.width().max(1);
-    let win_h = alloc.height().max(1);
-
-    let (mon_w, mon_h) = window
-        .surface()
-        .and_then(|surface| {
-            let display = surface.display();
-            display.monitor_at_surface(&surface).map(|monitor| {
-                let geometry = monitor.geometry();
-                (geometry.width(), geometry.height())
-            })
-        })
-        .unwrap_or((1920, 1080));
-
-    let left = if window.is_anchor(Edge::Left) {
-        window.margin(Edge::Left)
-    } else if window.is_anchor(Edge::Right) {
-        mon_w - win_w - window.margin(Edge::Right)
-    } else {
-        window.margin(Edge::Left)
-    };
-
-    let top = if window.is_anchor(Edge::Top) {
-        window.margin(Edge::Top)
-    } else if window.is_anchor(Edge::Bottom) {
-        mon_h - win_h - window.margin(Edge::Bottom)
-    } else {
-        window.margin(Edge::Top)
-    };
-
-    (left, top)
 }
 
 // ===== 长按拖拽总装配 =====

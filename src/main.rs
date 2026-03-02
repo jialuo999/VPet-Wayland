@@ -2,10 +2,11 @@
 mod animation;
 mod config;
 mod drag;
-mod input_region;
+mod interaction;
 mod settings;
 mod stats;
-mod stats_panel;
+mod ui;
+mod window;
 
 // ===== 外部依赖导入 =====
 use gtk4::prelude::*;
@@ -27,12 +28,13 @@ use config::{
     load_panel_debug_config, start_panel_config_watcher, APP_ID, CAROUSEL_INTERVAL_MS,
 };
 use drag::setup_long_press_drag;
-use input_region::{
+use interaction::{
     setup_context_menu, setup_image_input_region, setup_input_probe, setup_touch_click_regions,
 };
-use settings::{SettingsPanel, SettingsStore, WindowPosition};
+use settings::{SettingsPanel, SettingsStore};
 use stats::PetStatsService;
-use stats_panel::StatsPanel;
+use ui::stats::StatsPanel;
+use window::position::{apply_window_position, current_window_left_top};
 
 // ===== 系统动作状态机（用于“关机动画完成后再执行动作”） =====
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -40,52 +42,6 @@ enum PendingSystemAction {
     None,
     Quit,
     Restart,
-}
-
-// 读取窗口当前左上角坐标（统一转换为 Left/Top 语义，便于持久化）
-fn current_window_left_top(window: &ApplicationWindow) -> (i32, i32) {
-    let alloc = window.allocation();
-    let win_w = alloc.width().max(1);
-    let win_h = alloc.height().max(1);
-
-    let (mon_w, mon_h) = window
-        .surface()
-        .and_then(|surface| {
-            let display = surface.display();
-            display.monitor_at_surface(&surface).map(|monitor| {
-                let geometry = monitor.geometry();
-                (geometry.width(), geometry.height())
-            })
-        })
-        .unwrap_or((1920, 1080));
-
-    let left = if window.is_anchor(Edge::Left) {
-        window.margin(Edge::Left)
-    } else if window.is_anchor(Edge::Right) {
-        mon_w - win_w - window.margin(Edge::Right)
-    } else {
-        window.margin(Edge::Left)
-    };
-
-    let top = if window.is_anchor(Edge::Top) {
-        window.margin(Edge::Top)
-    } else if window.is_anchor(Edge::Bottom) {
-        mon_h - win_h - window.margin(Edge::Bottom)
-    } else {
-        window.margin(Edge::Top)
-    };
-
-    (left, top)
-}
-
-// 应用已保存的位置：切换为 Left+Top 锚定并设置 margin
-fn apply_window_position(window: &ApplicationWindow, position: WindowPosition) {
-    window.set_anchor(Edge::Left, true);
-    window.set_anchor(Edge::Top, true);
-    window.set_anchor(Edge::Right, false);
-    window.set_anchor(Edge::Bottom, false);
-    window.set_margin(Edge::Left, position.left);
-    window.set_margin(Edge::Top, position.top);
 }
 
 fn main() {
