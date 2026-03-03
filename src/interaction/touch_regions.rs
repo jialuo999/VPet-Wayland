@@ -182,8 +182,9 @@ pub fn setup_touch_click_regions(
                 && (head_min_y..=head_max_y).contains(&source_y)
             {
                 let mut stats_service_for_interact = stats_service.clone();
-                stats_service_for_interact.on_interact(InteractType::TouchHead);
-                on_head_clicked();
+                if stats_service_for_interact.on_interact(InteractType::TouchHead) {
+                    on_head_clicked();
+                }
                 return;
             }
 
@@ -191,8 +192,9 @@ pub fn setup_touch_click_regions(
                 && (body_min_y..=body_max_y).contains(&source_y)
             {
                 let mut stats_service_for_interact = stats_service.clone();
-                stats_service_for_interact.on_interact(InteractType::TouchBody);
-                on_body_clicked();
+                if stats_service_for_interact.on_interact(InteractType::TouchBody) {
+                    on_body_clicked();
+                }
             }
         });
     }

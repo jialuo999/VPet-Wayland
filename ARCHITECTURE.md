@@ -137,8 +137,8 @@
 
 ### 5.3 触摸区域
 
-- 在头部矩形区域触发 `request_touch_head_animation()`，并执行 `on_interact(InteractType::TouchHead)`。
-- 在身体矩形区域触发 `request_touch_body_animation()`，并执行 `on_interact(InteractType::TouchBody)`。
+- 在头部矩形区域先执行 `on_interact(InteractType::TouchHead)`；仅当返回 `true` 时触发 `request_touch_head_animation()`。
+- 在身体矩形区域先执行 `on_interact(InteractType::TouchBody)`；仅当返回 `true` 时触发 `request_touch_body_animation()`。
 - 不同 `PetMode` 使用不同矩形参数，匹配不同体态资源。
 
 ## 6. 状态面板与配置热更新
@@ -174,17 +174,22 @@
   - `likability_max_for_level(level) = 90.0 + level * 10.0`
 - 升级时同步刷新上限：`feeling_max`、`strength_max`、`likability_max`。
 - `on_interact`（互动）流程：
-  1. 按互动类型扣体力：
-    - `TouchHead`：`TOUCH_HEAD_STRENGTH_COST = 5.0`
-    - `TouchBody`：`TOUCH_BODY_STRENGTH_COST = 10.0`
-  2. 按互动类型增加心情并调用统一入口 `apply_feeling_gain(...)`：
-    - `TouchHead`：`TOUCH_HEAD_FEELING_GAIN = 10.0`
-    - `TouchBody`：`TOUCH_BODY_FEELING_GAIN = 6.0`
-  3. 增加经验。
+  1. 先判定体力门槛：`strength >= 10`。
+  2. 若体力不足：不触发动画，不改数值（返回 `false`）。
+  3. 若体力足够但心情已满：仅触发动画，不改数值（返回 `true`）。
+  4. 若体力足够且心情未满：执行统一效果（`strength -= 2`、`feeling += 1`、`exp += level`），并返回 `true`。
+  5. 成功互动（返回 `true`）会重置“距离上次互动秒数”。
 - `on_feed`（投喂）改为接收 `&FoodItem`：
   1. 先加 `likability`（带溢出转健康）；
   2. 再加 `feeling`（通过 `apply_feeling_gain` 联动好感）；
   3. 维持饱食/口渴恢复逻辑。
+- `on_tick`（时间推进）新增自动消耗：
+  1. 维持基础衰减（饱食/口渴/体力自然下降）。
+  2. 当 `strength_food >= basic_stat_max * 50%`：额外消耗饱食并等量恢复体力（“消耗食物换体力”）。
+  3. 当 `strength_food <= basic_stat_max * 25%`：按 `rand(0..1) * TimePass` 随机扣减健康。
+- 心情随时间下降（基于上次互动时间）：
+  - `freedrop = DECAY_BALANCE_FEELING * TimePass * idle_multiplier`，其中 `idle_multiplier` 随“距离上次互动秒数”增长并封顶；
+  - 互动越久未发生，心情下降越快；成功互动后该计时重置。
 - 心情与好感联动：
   - Feeling 正增益会等额转为好感增益（不再乘系数）；
   - Tick 中先计算 `raw_feeling`（不先截断）；当 `raw_feeling < 0` 时按 `raw_feeling / 2.0` 扣减好感，再统一 clamp；

@@ -3,6 +3,7 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use crate::config::PanelDebugConfig;
+use rand::random;
 
 use super::food::FoodItem;
 use super::model::{InteractType, PetMode, PetStats};
@@ -18,13 +19,14 @@ const DECAY_BALANCE_FOOD_DRINK: f64 = 1.0;
 const DECAY_BALANCE_STRENGTH: f64 = 0.8;
 const DECAY_BALANCE_FEELING: f64 = 0.5;
 const DECAY_BALANCE_HEALTH: f64 = 0.3;
-const TOUCH_HEAD_STRENGTH_COST: f64 = 7.0;
-const TOUCH_HEAD_FEELING_GAIN: f64 = 20.0;
-const TOUCH_BODY_STRENGTH_COST: f64 = 12.0;
-const TOUCH_BODY_FEELING_GAIN: f64 = 15.0;
-const PINCH_STRENGTH_COST: f64 = 5.0;
-const PINCH_FEELING_GAIN_POSITIVE: f64 = 10.0;
-const PINCH_FEELING_GAIN_NEGATIVE: f64 = -7.0;
+const FOOD_AUTO_CONSUME_HIGH_RATIO: f64 = 0.5;
+const FOOD_HEALTH_RISK_LOW_RATIO: f64 = 0.25;
+const AUTO_CONSUME_FOOD_TO_STRENGTH_RATE: f64 = 1.0;
+const FEELING_DROP_IDLE_MULTIPLIER_CAP: f64 = 3.0;
+const FEELING_DROP_IDLE_REF_SECS: f64 = 60.0;
+const INTERACT_MIN_STRENGTH_REQUIRED: f64 = 10.0;
+const INTERACT_STRENGTH_COST: f64 = 2.0;
+const INTERACT_FEELING_GAIN: f64 = 1.0;
 
 // ===== 面板显示上限 =====
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +51,7 @@ impl Default for PanelLimits {
 pub struct PetStatsService {
     stats: Rc<RefCell<PetStats>>,
     limits: Rc<RefCell<PanelLimits>>,
+    secs_since_last_interact: Rc<RefCell<f64>>,
     logic_interval_secs: f64,
 }
 
@@ -64,6 +67,7 @@ impl PetStatsService {
         Self {
             stats: Rc::new(RefCell::new(initial_stats)),
             limits: Rc::new(RefCell::new(PanelLimits::default())),
+            secs_since_last_interact: Rc::new(RefCell::new(0.0)),
             logic_interval_secs: clamp_logic_interval(logic_interval_secs),
         }
     }
@@ -79,6 +83,7 @@ impl PetStatsService {
         Self {
             stats,
             limits: Rc::new(RefCell::new(PanelLimits::default())),
+            secs_since_last_interact: Rc::new(RefCell::new(0.0)),
             logic_interval_secs: clamp_logic_interval(logic_interval_secs),
         }
     }
@@ -142,19 +147,34 @@ impl PetStatsService {
 
         let scale = (delta_secs / self.logic_interval_secs) * DECAY_BASE;
 
+        {
+            let mut secs_since_last_interact = self.secs_since_last_interact.borrow_mut();
+            *secs_since_last_interact += delta_secs;
+        }
+
+        let secs_since_last_interact = *self.secs_since_last_interact.borrow();
+        let idle_multiplier =
+            (1.0 + secs_since_last_interact / FEELING_DROP_IDLE_REF_SECS)
+                .min(FEELING_DROP_IDLE_MULTIPLIER_CAP);
+        let freedrop = DECAY_BALANCE_FEELING * scale * idle_multiplier;
+
         let basic_stat_max = self.basic_stat_max();
         let mut stats = self.stats.borrow_mut();
+        let food_half_threshold = basic_stat_max * FOOD_AUTO_CONSUME_HIGH_RATIO;
+        let food_quarter_threshold = basic_stat_max * FOOD_HEALTH_RISK_LOW_RATIO;
 
         stats.strength_food -= DECAY_BALANCE_FOOD_DRINK * scale;
         stats.strength_drink -= DECAY_BALANCE_FOOD_DRINK * scale;
         stats.strength -= DECAY_BALANCE_STRENGTH * scale;
 
-        let feeling_decay = if stats.strength < 30.0 {
-            DECAY_BALANCE_FEELING * scale
-        } else {
-            0.0
-        };
-        let raw_feeling = stats.feeling - feeling_decay;
+        if stats.strength_food >= food_half_threshold {
+            stats.strength_food -= AUTO_CONSUME_FOOD_TO_STRENGTH_RATE * scale;
+            stats.strength += AUTO_CONSUME_FOOD_TO_STRENGTH_RATE * scale;
+        } else if stats.strength_food <= food_quarter_threshold {
+            stats.health -= random::<f64>() * scale;
+        }
+
+        let raw_feeling = stats.feeling - freedrop;
         stats.feeling = raw_feeling;
 
         if raw_feeling < 20.0 && stats.strength_food < 10.0 && stats.strength_drink < 10.0 {
@@ -197,35 +217,43 @@ impl PetStatsService {
 
 	// 互动：消耗体力并变化心情/经验
     #[allow(dead_code)]
-    pub fn on_interact(&mut self, interact_type: InteractType) {
+    pub fn on_interact(&mut self, _interact_type: InteractType) -> bool {
         let basic_stat_max = self.basic_stat_max();
 
-        let (strength_cost, feeling_gain) = match interact_type {
-            InteractType::TouchHead => (TOUCH_HEAD_STRENGTH_COST, TOUCH_HEAD_FEELING_GAIN),
-            InteractType::TouchBody => (TOUCH_BODY_STRENGTH_COST, TOUCH_BODY_FEELING_GAIN),
-            InteractType::Pinch => {
-                let feeling_delta = match self.cal_mode() {
-                    PetMode::Happy | PetMode::Nomal => PINCH_FEELING_GAIN_POSITIVE,
-                    PetMode::PoorCondition | PetMode::Ill => PINCH_FEELING_GAIN_NEGATIVE,
-                };
-                (PINCH_STRENGTH_COST, feeling_delta)
-            }
+        let (can_animate, should_apply_effect) = {
+            let stats = self.stats.borrow();
+            let has_enough_strength = stats.strength >= INTERACT_MIN_STRENGTH_REQUIRED;
+            let feeling_not_full = stats.feeling < stats.feeling_max;
+            (has_enough_strength, has_enough_strength && feeling_not_full)
         };
+
+        if !can_animate {
+            return false;
+        }
+
+        *self.secs_since_last_interact.borrow_mut() = 0.0;
+
+        if !should_apply_effect {
+            return true;
+        }
 
         {
             let mut stats = self.stats.borrow_mut();
-            stats.strength = (stats.strength - strength_cost).clamp(0.0, stats.strength_max);
+            stats.strength =
+                (stats.strength - INTERACT_STRENGTH_COST).clamp(0.0, stats.strength_max);
             let level_f = stats.level as f64;
             stats.exp += 1.0 * level_f;
         }
 
-        self.apply_feeling_gain(feeling_gain);
+        self.apply_feeling_gain(INTERACT_FEELING_GAIN);
 
         let mut stats = self.stats.borrow_mut();
 
         clamp_stats(&mut stats, basic_stat_max);
         apply_level_up_if_needed(&mut stats);
         clamp_stats(&mut stats, basic_stat_max);
+
+        true
     }
 
 	// 心情变化统一入口（并联动好感）

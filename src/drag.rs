@@ -186,9 +186,10 @@ pub fn setup_long_press_drag(
                     && drag_state.press_in_pinch_rect
                     && !drag_state.pinch_active
                 {
-                    drag_state.pinch_active = true;
-                    stats_service_for_timer.on_interact(InteractType::Pinch);
-                    request_pinch_animation_start();
+                    if stats_service_for_timer.on_interact(InteractType::Pinch) {
+                        drag_state.pinch_active = true;
+                        request_pinch_animation_start();
+                    }
                 }
             });
         });
