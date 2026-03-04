@@ -214,13 +214,16 @@
 - 新增玩法逻辑：在 `PetStatsService` 中扩展 `on_tick/on_feed/on_interact` 并让动画/面板消费。
 - 配置化交互区域：可将头/身体/捏捏矩形迁移到 `config.toml`，减少硬编码常量。
 
-## 9. 当前动画现状（2026-03）
 
-- 已移除：`State` 播放器与 `IDEL` 三段式逻辑。
-- 保留：`startup`、`default_idle`、`drag_raise`、`pinch`、`touch`、`shutdown`。
-- Default：固定顺序循环。
-- Drag Raise：支持“动态循环 + 定时静态 A/B 周期 + 放手 C 结束”。
+## 9. 动画链路与配置（2026-03）
+
+- IDEL/State 动画已重新接入，支持三段式（A_Start/B_Loop/C_End/Single）与 StateONE <-> StateTWO 循环。
+- 资源路径可配置：`idel_root`、`state_root`、`switch_up_root`、`switch_down_root`，详见 config.toml。
+- State 动画帧率较低（默认 200ms），循环持续时长加倍（更慢更持久）。
+- DefaultIdlePlayer 内部为状态机，支持 Default/Idel/StateONE/StateTWO/Switch 过渡。
+- 逻辑定时器每 15 秒触发，按概率分支进入 Idle/State/Move/Sleep/RandomInteraction。
+- 模式切换时自动播放 Switch_Up/Down 过渡动画，逐级递归，结束回 Default。
 
 ## 10. 当前架构一句话总结
 
-该项目采用“GTK 主线程 + 双定时器（动画/状态） + 原子请求队列 + 多播放器状态机”的结构，在保持交互响应的同时，实现了可热更新、可扩展的桌宠动画系统。
+该项目采用“GTK 主线程 + 双定时器（动画/状态） + 原子请求队列 + 多播放器状态机 + 可配置资源路径”的结构，在保持交互响应的同时，实现了可热更、可扩展的桌宠动画系统。

@@ -4,6 +4,7 @@ use serde::Deserialize;
 use super::defaults::{
 	ASSETS_BODY_ROOT, DEFAULT_HAPPY_IDLE_VARIANTS, DEFAULT_ILL_IDLE_ROOT,
 	DEFAULT_NOMAL_IDLE_ROOT, DEFAULT_POOR_CONDITION_IDLE_ROOT, PANEL_BASIC_STAT_MAX,
+	IDEL_ROOT, STATE_ROOT, SWITCH_DOWN_ROOT, SWITCH_UP_ROOT,
 	PANEL_DEFAULT_AFFINITY, PANEL_DEFAULT_EXPERIENCE, PANEL_DEFAULT_HEALTH,
 	PANEL_DEFAULT_LEVEL, PANEL_DEFAULT_MOOD, PANEL_DEFAULT_SATIETY, PANEL_DEFAULT_STAMINA,
 	PANEL_DEFAULT_THIRST, PANEL_EXPERIENCE_MAX, PINCH_ROOT,
@@ -129,6 +130,10 @@ pub struct AnimationPathConfig {
 	pub default_nomal_idle_root: String,
 	pub default_poor_condition_idle_root: String,
 	pub default_ill_idle_root: String,
+	pub idel_root: String,
+	pub state_root: String,
+	pub switch_up_root: String,
+	pub switch_down_root: String,
 	pub startup_root: String,
 	pub raise_dynamic_root: String,
 	pub raise_static_root: String,
@@ -149,6 +154,10 @@ impl Default for AnimationPathConfig {
 			default_nomal_idle_root: DEFAULT_NOMAL_IDLE_ROOT.to_string(),
 			default_poor_condition_idle_root: DEFAULT_POOR_CONDITION_IDLE_ROOT.to_string(),
 			default_ill_idle_root: DEFAULT_ILL_IDLE_ROOT.to_string(),
+			idel_root: IDEL_ROOT.to_string(),
+			state_root: STATE_ROOT.to_string(),
+			switch_up_root: SWITCH_UP_ROOT.to_string(),
+			switch_down_root: SWITCH_DOWN_ROOT.to_string(),
 			startup_root: STARTUP_ROOT.to_string(),
 			raise_dynamic_root: RAISE_DYNAMIC_ROOT.to_string(),
 			raise_static_root: RAISE_STATIC_ROOT.to_string(),
@@ -198,6 +207,18 @@ impl AnimationPathConfig {
 		if self.default_ill_idle_root.trim().is_empty() {
 			self.default_ill_idle_root = defaults.default_ill_idle_root;
 		}
+		if self.idel_root.trim().is_empty() {
+			self.idel_root = defaults.idel_root;
+		}
+		if self.state_root.trim().is_empty() {
+			self.state_root = defaults.state_root;
+		}
+		if self.switch_up_root.trim().is_empty() {
+			self.switch_up_root = defaults.switch_up_root;
+		}
+		if self.switch_down_root.trim().is_empty() {
+			self.switch_down_root = defaults.switch_down_root;
+		}
 		self.default_happy_idle_variants = self
 			.default_happy_idle_variants
 			.into_iter()
@@ -219,6 +240,10 @@ pub(crate) struct AnimationPathConfigPartial {
 	default_nomal_idle_root: Option<String>,
 	default_poor_condition_idle_root: Option<String>,
 	default_ill_idle_root: Option<String>,
+	idel_root: Option<String>,
+	state_root: Option<String>,
+	switch_up_root: Option<String>,
+	switch_down_root: Option<String>,
 	startup_root: Option<String>,
 	raise_dynamic_root: Option<String>,
 	raise_static_root: Option<String>,
@@ -245,6 +270,18 @@ impl AnimationPathConfigPartial {
 		}
 		if let Some(value) = self.default_ill_idle_root {
 			base.default_ill_idle_root = value;
+		}
+		if let Some(value) = self.idel_root {
+			base.idel_root = value;
+		}
+		if let Some(value) = self.state_root {
+			base.state_root = value;
+		}
+		if let Some(value) = self.switch_up_root {
+			base.switch_up_root = value;
+		}
+		if let Some(value) = self.switch_down_root {
+			base.switch_down_root = value;
 		}
 		if let Some(value) = self.startup_root {
 			base.startup_root = value;

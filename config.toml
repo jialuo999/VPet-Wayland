@@ -4,7 +4,7 @@ basic_stat_max = 100
 experience_max = 100
 
 # 面板默认值（配置热更新时会立即应用）
-default_stamina = 8
+default_stamina = 80
 default_satiety = 80
 default_thirst = 80
 default_mood = 80
@@ -23,6 +23,10 @@ default_happy_idle_variants = [
 default_nomal_idle_root = "Default/Nomal"
 default_poor_condition_idle_root = "Default/PoorCondition"
 default_ill_idle_root = "Default/Ill"
+idel_root = "IDEL"
+state_root = "State"
+switch_up_root = "Switch/Up"
+switch_down_root = "Switch/Down"
 
 # 启动与拖拽动画目录
 startup_root = "StartUP"

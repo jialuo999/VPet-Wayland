@@ -2,6 +2,7 @@
 mod common;
 mod default_idle;
 mod drag_raise;
+mod idel_state;
 mod pinch;
 mod shutdown;
 mod startup;
@@ -16,6 +17,11 @@ pub(crate) use default_idle::{
 pub(crate) use drag_raise::{
     collect_drag_raise_end_variants, collect_drag_raise_loop_files,
     collect_drag_raise_start_files, collect_drag_raise_static_b_variants,
+};
+pub(crate) use idel_state::{
+    collect_idel_action_names, load_idel_loop_variants, load_idel_segment,
+    load_state_loop_variants, load_state_segment, load_switch_single,
+    IdelStateSegment,
 };
 pub(crate) use pinch::{
     collect_pinch_end_files, collect_pinch_loop_variants, collect_pinch_start_files,

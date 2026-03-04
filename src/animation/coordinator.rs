@@ -1,14 +1,15 @@
 // ===== 依赖导入 =====
 use glib::timeout_add_local;
 use gtk4::{ApplicationWindow, Image};
+use rand::Rng;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::config::{load_animation_path_config, AnimationPathConfig, CAROUSEL_INTERVAL_MS};
+use crate::config::{load_animation_path_config, AnimationPathConfig};
 use crate::interaction::setup_image_input_region;
-use crate::stats::{PetMode, PetStatsService};
+use crate::stats::{PetMode, PetRuntimeState, PetStatsService};
 
 use super::assets::body_asset_path;
 use super::player::{
@@ -36,9 +37,9 @@ struct PlayerSet {
 
 impl PlayerSet {
 	// 模式切换时重载所有依赖模式的播放器
-    fn reload_for_mode(&mut self, mode: PetMode) {
+    fn reload_for_mode(&mut self, before: PetMode, mode: PetMode) {
         self.current_mode = mode;
-        self.default_idle.reload(mode);
+        self.default_idle.request_mode_switch(before, mode);
         self.drag_raise.reload(mode);
         self.pinch.reload(mode);
         self.touch.reload(mode);
@@ -51,6 +52,50 @@ impl PlayerSet {
             self.startup.peek_first_frame()
         } else {
             self.default_idle.enter()
+        }
+    }
+}
+
+struct IdleEventDispatcher {
+    interaction_cycle: i32,
+    count_nomal: u32,
+}
+
+impl IdleEventDispatcher {
+    fn new() -> Self {
+        Self {
+            interaction_cycle: 30,
+            count_nomal: 0,
+        }
+    }
+
+    fn on_timer_elapsed(&mut self, players: &mut PlayerSet, runtime_state: PetRuntimeState, is_press: bool) {
+        let is_idel = matches!(runtime_state, PetRuntimeState::Nomal | PetRuntimeState::Work) && !is_press;
+        if !is_idel {
+            return;
+        }
+
+        let mut rnddisplay = (self.interaction_cycle - self.count_nomal as i32).max(20);
+        if runtime_state == PetRuntimeState::Work {
+            rnddisplay = 2 * rnddisplay + 20;
+        }
+
+        if rnddisplay <= 0 {
+            return;
+        }
+
+        let r = rand::thread_rng().gen_range(0..rnddisplay);
+
+        let triggered = match r {
+            3 | 4 | 5 => players.default_idle.trigger_idel(),
+            6 => players.default_idle.trigger_state_one(self.count_nomal),
+            _ => false,
+        };
+
+        if triggered {
+            self.count_nomal = 0;
+        } else {
+            self.count_nomal = self.count_nomal.saturating_add(1);
         }
     }
 }
@@ -150,7 +195,8 @@ fn maybe_update_mode(players: &mut PlayerSet, stats_service: &PetStatsService) {
 
     let next_mode = stats_service.cal_mode();
     if next_mode != players.current_mode {
-        players.reload_for_mode(next_mode);
+        let before = players.current_mode;
+        players.reload_for_mode(before, next_mode);
     }
 }
 
@@ -274,40 +320,79 @@ pub fn load_carousel_images(
     }
 
     let state = Rc::new(RefCell::new(players));
-    let state_clone = state.clone();
-    let stats_service_clone = stats_service.clone();
-    let image_clone = image.clone();
-    let window_clone = window.clone();
+    let state_for_logic = state.clone();
+    let stats_service_for_logic = stats_service.clone();
+    let logic_dispatcher = Rc::new(RefCell::new(IdleEventDispatcher::new()));
+    let logic_dispatcher_clone = logic_dispatcher.clone();
 
-    timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
-        // 每个 tick：处理配置热更、消费请求、推进一帧并更新输入区域
-        let next_path = {
-            let mut players = state_clone.borrow_mut();
-            if consume_animation_config_reload_request() {
-                let latest_config = load_animation_path_config();
-                match build_players(&latest_config, players.current_mode, false) {
-                    Ok(next_players) => {
-                        *players = next_players;
-                    }
-                    Err(err) => {
-                        eprintln!("动画配置热更新失败，保留当前配置：{}", err);
-                    }
-                }
-            }
-            let reqs = consume_requests();
-            maybe_update_mode(&mut players, &stats_service_clone);
-            dispatch_requests(&mut players, reqs);
-            advance_frame(&mut players)
-        };
-
-        if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&next_path) {
-            image_clone.set_from_pixbuf(Some(&pixbuf));
-            *current_pixbuf.borrow_mut() = Some(pixbuf.clone());
-            setup_image_input_region(&window_clone, &image_clone, &pixbuf);
-        }
-
+    let logic_interval_secs = stats_service.logic_interval_secs();
+    let logic_interval_ms = (logic_interval_secs * 1000.0).max(1000.0) as u64;
+    timeout_add_local(Duration::from_millis(logic_interval_ms), move || {
+        let runtime_state = stats_service_for_logic.runtime_state();
+        let mut players = state_for_logic.borrow_mut();
+        let is_press = players.drag_raise.is_active() || players.pinch.is_active() || players.touch.is_active();
+        logic_dispatcher_clone
+            .borrow_mut()
+            .on_timer_elapsed(&mut players, runtime_state, is_press);
         glib::ControlFlow::Continue
     });
+
+
+    // 动画 tick：根据当前 DefaultIdlePlayer 类型动态调整 interval
+    let tick_state = state.clone();
+    let tick_image = image.clone();
+    let tick_pixbuf = current_pixbuf.clone();
+    let tick_window = window.clone();
+    let tick_stats = stats_service.clone();
+    fn schedule_tick(
+        state: Rc<RefCell<PlayerSet>>,
+        image: Image,
+        current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
+        window: ApplicationWindow,
+        stats: PetStatsService,
+    ) {
+        let interval = {
+            let players = state.borrow();
+            players.default_idle.frame_interval()
+        };
+        timeout_add_local(Duration::from_millis(interval), move || {
+            let next_path = {
+                let mut players = state.borrow_mut();
+                if consume_animation_config_reload_request() {
+                    let latest_config = load_animation_path_config();
+                    match build_players(&latest_config, players.current_mode, false) {
+                        Ok(next_players) => {
+                            *players = next_players;
+                        }
+                        Err(err) => {
+                            eprintln!("动画配置热更新失败，保留当前配置：{}", err);
+                        }
+                    }
+                }
+                let reqs = consume_requests();
+                maybe_update_mode(&mut players, &stats);
+                dispatch_requests(&mut players, reqs);
+                advance_frame(&mut players)
+            };
+
+            if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&next_path) {
+                image.set_from_pixbuf(Some(&pixbuf));
+                *current_pixbuf.borrow_mut() = Some(pixbuf.clone());
+                setup_image_input_region(&window, &image, &pixbuf);
+            }
+
+            // 动态重调度下一帧
+            schedule_tick(
+                state.clone(),
+                image.clone(),
+                current_pixbuf.clone(),
+                window.clone(),
+                stats.clone(),
+            );
+            glib::ControlFlow::Break
+        });
+    }
+    schedule_tick(tick_state, tick_image, tick_pixbuf, tick_window, tick_stats);
 
     set_shutdown_animation_finished(false);
 
