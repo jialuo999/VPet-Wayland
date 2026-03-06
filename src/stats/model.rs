@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 // ===== 宠物状态分类 =====
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PetMode {
@@ -24,7 +26,7 @@ pub enum PetRuntimeState {
 }
 
 // ===== 宠物核心数值模型 =====
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PetStats {
     pub health: f64,
     pub feeling: f64,

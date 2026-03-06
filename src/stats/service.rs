@@ -5,8 +5,8 @@ use std::rc::Rc;
 use crate::config::PanelDebugConfig;
 use rand::{random, Rng};
 
-use super::food::FoodItem;
-use super::leveling::{add_exp, likability_max_from_level_state, recalc_caps, PetLevelState};
+use super::food::ItemDef;
+use super::leveling::{add_exp, PetLevelState};
 use super::model::{InteractType, PetMode, PetRuntimeState, PetStats};
 
 // ===== 系统参数常量 =====
@@ -67,12 +67,6 @@ impl PetStatsService {
         }
     }
 
-    pub fn from_panel_config(panel_config: PanelDebugConfig, logic_interval_secs: f64) -> Self {
-        let service = Self::new(panel_config_to_stats(&panel_config), logic_interval_secs);
-        service.apply_panel_config(panel_config);
-        service
-    }
-
     #[allow(dead_code)]
     pub fn from_shared(stats: Rc<RefCell<PetStats>>, logic_interval_secs: f64) -> Self {
         Self {
@@ -106,14 +100,13 @@ impl PetStatsService {
         *self.runtime_state.borrow()
     }
 
-	// 每次配置更新都重建数值与显示上限
+    // 配置更新只调整面板显示上限，不覆盖运行中的角色数值。
     pub fn apply_panel_config(&self, panel_config: PanelDebugConfig) {
         {
             let mut limits = self.limits.borrow_mut();
             limits.basic_stat_max = panel_config.basic_stat_max as f64;
             limits.experience_max = panel_config.experience_max as f64;
         }
-        self.replace_stats(panel_config_to_stats(&panel_config));
     }
 
     #[allow(dead_code)]
@@ -171,24 +164,27 @@ impl PetStatsService {
         clamp_stats(&mut stats);
     }
 
-	// 投喂：恢复基础属性并增加好感
+    // 统一物品使用入口：所有商品效果都通过 effects 字段生效。
     #[allow(dead_code)]
-    pub fn on_feed(&mut self, food: &FoodItem) {
-        self.apply_likability_gain(food.likability);
-
-        let bonus = {
-            let stats = self.stats.borrow();
-            likability_bonus(stats.likability)
-        };
-        let recover_factor = 1.0 + bonus;
-
-        self.apply_feeling_gain(food.feeling * recover_factor);
+    pub fn on_use_item(&mut self, item: &ItemDef) {
+        self.apply_likability_gain(item.effects.likability);
+        self.apply_feeling_gain(item.effects.mood);
 
         let mut stats = self.stats.borrow_mut();
-        stats.strength_food += food.strength_food * recover_factor;
-        stats.strength_drink += food.strength_drink * recover_factor;
+        stats.strength_food += item.effects.satiety;
+        stats.strength_drink += item.effects.thirst;
+        stats.strength += item.effects.stamina;
+        stats.health += item.effects.health;
+        stats.exp += item.effects.exp;
 
         clamp_stats(&mut stats);
+        apply_level_up_if_needed(&mut stats);
+        clamp_stats(&mut stats);
+    }
+
+    #[allow(dead_code)]
+    pub fn on_feed(&mut self, item: &ItemDef) {
+        self.on_use_item(item);
     }
 
 	// 互动：消耗体力并变化心情/经验
@@ -469,66 +465,8 @@ fn clamp_stats(stats: &mut PetStats) {
     stats.exp = stats.exp.max(0.0);
 }
 
-fn panel_config_to_stats(panel_config: &PanelDebugConfig) -> PetStats {
-    let requested_level = panel_config.default_level.max(1);
-    let (level, level_stage) = normalize_level_and_stage(requested_level);
-    let mut level_state = PetLevelState {
-        level,
-        level_max: level_stage,
-        exp: panel_config.default_experience as f64,
-        likability_max: likability_max_from_level_state(level, level_stage),
-        strength_max: 100.0,
-        feeling_max: 100.0,
-    };
-    recalc_caps(&mut level_state);
-    add_exp(&mut level_state, 0.0);
-
-    PetStats {
-        health: (panel_config.default_health as f64).clamp(0.0, HEALTH_MAX),
-        feeling: (panel_config.default_mood as f64).clamp(0.0, level_state.feeling_max),
-        feeling_max: level_state.feeling_max,
-        likability_max: level_state.likability_max,
-        strength: (panel_config.default_stamina as f64).clamp(0.0, level_state.strength_max),
-        strength_max: level_state.strength_max,
-        strength_food: (panel_config.default_satiety as f64).clamp(0.0, level_state.strength_max),
-        strength_drink: (panel_config.default_thirst as f64).clamp(0.0, level_state.strength_max),
-        likability: (panel_config.default_affinity as f64).clamp(0.0, level_state.likability_max),
-        level: level_state.level,
-        level_stage: level_state.level_max,
-        exp: level_state.exp,
-    }
-}
-
-#[allow(dead_code)]
-fn likability_bonus(likability: f64) -> f64 {
-    if likability >= 80.0 {
-        0.20
-    } else if likability >= 40.0 {
-        0.10
-    } else {
-        0.0
-    }
-}
-
 fn clamp_logic_interval(value: f64) -> f64 {
     value.clamp(LOGIC_INTERVAL_MIN_SECS, LOGIC_INTERVAL_MAX_SECS)
-}
-
-fn normalize_level_and_stage(level: u32) -> (u32, u32) {
-    let mut current_level = level.max(1);
-    let mut level_stage = 0_u32;
-
-    loop {
-        let stage_gate = 1000_u32.saturating_add(level_stage.saturating_mul(100));
-        if current_level <= stage_gate {
-            break;
-        }
-
-        level_stage = level_stage.saturating_add(1);
-        current_level = 100_u32.saturating_mul(level_stage).max(1);
-    }
-
-    (current_level, level_stage)
 }
 
 fn random_binary_f64() -> f64 {

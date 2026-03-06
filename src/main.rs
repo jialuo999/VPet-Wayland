@@ -35,7 +35,7 @@ use interaction::{
     setup_touch_click_regions,
 };
 use settings::{SettingsPanel, SettingsStore};
-use stats::PetStatsService;
+use stats::{PetStats, PetStatsSaveStore, PetStatsService};
 use ui::stats::StatsPanel;
 use window::position::{apply_window_position, current_window_left_top};
 
@@ -98,7 +98,11 @@ fn build_ui(app: &Application) {
 
     // ===== 核心运行时状态（当前图像帧 + 宠物数值服务） =====
     let current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(None));
-    let stats_service = PetStatsService::from_panel_config(load_panel_debug_config(), 15.0);
+    let panel_config = load_panel_debug_config();
+    let stats_save_store = Rc::new(PetStatsSaveStore::load());
+    let initial_stats = stats_save_store.load_stats().unwrap_or_else(PetStats::default);
+    let stats_service = PetStatsService::new(initial_stats, 15.0);
+    stats_service.apply_panel_config(panel_config);
 
     // ===== 加载动画资源并创建主图像控件 =====
     let initial_pixel_size = (DEFAULT_PIXEL_SIZE as f64 * settings_store.scale_factor()).round().max(32.0) as i32;
@@ -115,8 +119,12 @@ fn build_ui(app: &Application) {
     let logic_interval_secs = stats_service.logic_interval_secs();
     let stats_interval_ms = (logic_interval_secs * 1000.0) as u64;
     let mut stats_service_for_tick = stats_service.clone();
+    let stats_save_store_for_tick = stats_save_store.clone();
     glib::timeout_add_local(Duration::from_millis(stats_interval_ms), move || {
         stats_service_for_tick.on_tick(logic_interval_secs);
+        if let Err(err) = stats_save_store_for_tick.save_stats(&stats_service_for_tick.get_stats()) {
+            eprintln!("保存角色数值存档失败：{}", err);
+        }
         glib::ControlFlow::Continue
     });
     
@@ -257,6 +265,8 @@ fn build_ui(app: &Application) {
             let app_for_quit = app_for_quit.clone();
             let window_for_quit = window.clone();
             let settings_store_for_quit = settings_store.clone();
+            let stats_service_for_quit = stats_service.clone();
+            let stats_save_store_for_quit = stats_save_store.clone();
             Rc::new(move |action: PendingSystemAction| {
                 // 已有待执行动作时忽略重复请求，避免并发退出流程
                 if *pending_action.borrow() != PendingSystemAction::None {
@@ -271,6 +281,8 @@ fn build_ui(app: &Application) {
                 let app_for_timeout = app_for_quit.clone();
                 let window_for_timeout = window_for_quit.clone();
                 let settings_store_for_timeout = settings_store_for_quit.clone();
+                let stats_service_for_timeout = stats_service_for_quit.clone();
+                let stats_save_store_for_timeout = stats_save_store_for_quit.clone();
                 glib::timeout_add_local(Duration::from_millis(CAROUSEL_INTERVAL_MS), move || {
                     if !is_shutdown_animation_finished() {
                         // 动画未完成，继续等待下一个周期
@@ -283,6 +295,12 @@ fn build_ui(app: &Application) {
                         if let Err(err) = settings_store_for_timeout.update_position(left, top) {
                             eprintln!("退出前保存窗口位置失败：{}", err);
                         }
+                    }
+
+                    if let Err(err) =
+                        stats_save_store_for_timeout.save_stats(&stats_service_for_timeout.get_stats())
+                    {
+                        eprintln!("退出前保存角色数值存档失败：{}", err);
                     }
 
                     let action = *pending_action_for_timeout.borrow();
