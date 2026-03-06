@@ -47,6 +47,19 @@ impl SettingsStore {
         }
     }
 
+    pub fn scale_factor(&self) -> f64 {
+        self.settings.borrow().scale_factor
+    }
+
+	// 更新缩放因子并持久化
+    pub fn update_scale_factor(&self, factor: f64) -> anyhow::Result<()> {
+        {
+            let mut settings = self.settings.borrow_mut();
+            settings.scale_factor = factor;
+        }
+        self.persist()
+    }
+
 	// 更新开关并持久化
     pub fn update_remember_position(&self, enabled: bool) -> anyhow::Result<()> {
         {

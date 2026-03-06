@@ -1,5 +1,6 @@
 remember_position = true
+scale_factor = 1.0
 
 [window_position]
-left = 1561
-top = 481
+left = 867
+top = 339

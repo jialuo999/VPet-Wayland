@@ -4,6 +4,7 @@ pub const CAROUSEL_INTERVAL_MS: u64 = 130;
 pub const INPUT_DEBUG_LOG: bool = false;
 pub const DRAG_LONG_PRESS_MS: u64 = 450;
 pub const DRAG_ALLOW_OFFSCREEN: bool = true;
+pub const DEFAULT_PIXEL_SIZE: i32 = 256;
 
 // ===== 动画资源路径默认配置 =====
 pub const ASSETS_BODY_ROOT: &str = "assets/body";

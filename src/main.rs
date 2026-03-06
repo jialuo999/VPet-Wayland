@@ -27,6 +27,7 @@ use animation::{
 };
 use config::{
     load_panel_debug_config, start_panel_config_watcher, APP_ID, CAROUSEL_INTERVAL_MS,
+    DEFAULT_PIXEL_SIZE,
 };
 use drag::setup_long_press_drag;
 use interaction::{
@@ -100,7 +101,8 @@ fn build_ui(app: &Application) {
     let stats_service = PetStatsService::from_panel_config(load_panel_debug_config(), 15.0);
 
     // ===== 加载动画资源并创建主图像控件 =====
-    let image = match load_carousel_images(&window, current_pixbuf.clone(), stats_service.clone()) {
+    let initial_pixel_size = (DEFAULT_PIXEL_SIZE as f64 * settings_store.scale_factor()).round().max(32.0) as i32;
+    let image = match load_carousel_images(&window, current_pixbuf.clone(), stats_service.clone(), initial_pixel_size) {
         Ok(image_widget) => image_widget,
         Err(e) => {
             // 资源缺失属于不可恢复错误，直接退出
@@ -223,10 +225,13 @@ fn build_ui(app: &Application) {
                 app,
                 &window,
                 settings_store.snapshot(),
-                Rc::new(move |remember_position| {
+                Rc::new(move |remember_position, scale_factor| {
                     if let Err(err) = settings_store.update_remember_position(remember_position) {
                         eprintln!("保存设置失败：{}", err);
                         return;
+                    }
+                    if let Err(err) = settings_store.update_scale_factor(scale_factor) {
+                        eprintln!("保存缩放设置失败：{}", err);
                     }
 
                     if remember_position {
@@ -236,6 +241,13 @@ fn build_ui(app: &Application) {
                         }
                     }
                 }),
+                {
+                    let image_for_preview = image.clone();
+                    Rc::new(move |scale_factor: f64| {
+                        let pixel_size = (DEFAULT_PIXEL_SIZE as f64 * scale_factor).round().max(32.0) as i32;
+                        image_for_preview.set_pixel_size(pixel_size);
+                    })
+                },
             ))
         };
         let app_for_quit = app.clone();

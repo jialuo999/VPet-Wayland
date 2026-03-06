@@ -679,13 +679,14 @@ pub fn load_carousel_images(
     window: &ApplicationWindow,
     current_pixbuf: Rc<RefCell<Option<gdk_pixbuf::Pixbuf>>>,
     stats_service: PetStatsService,
+    pixel_size: i32,
 ) -> Result<Image, String> {
     let animation_config = load_animation_path_config();
     let current_mode = stats_service.cal_mode();
     let mut players = build_players(&animation_config, current_mode, true)?;
 
     let image = Image::new();
-    image.set_pixel_size(256);
+    image.set_pixel_size(pixel_size);
 
     if let Some(first_frame) = players.initial_frame() {
         if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file(&first_frame) {

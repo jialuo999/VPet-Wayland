@@ -6,7 +6,8 @@ mod watcher;
 
 // ===== 常量导出 =====
 pub use defaults::{
-    APP_ID, CAROUSEL_INTERVAL_MS, DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS, INPUT_DEBUG_LOG,
+    APP_ID, CAROUSEL_INTERVAL_MS, DEFAULT_PIXEL_SIZE, DRAG_ALLOW_OFFSCREEN, DRAG_LONG_PRESS_MS,
+    INPUT_DEBUG_LOG,
 };
 
 // ===== 类型与函数导出 =====

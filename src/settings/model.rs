@@ -14,6 +14,7 @@ pub struct WindowPosition {
 pub struct AppSettings {
     pub remember_position: bool,
     pub window_position: Option<WindowPosition>,
+    pub scale_factor: f64,
 }
 
 impl Default for AppSettings {
@@ -21,6 +22,7 @@ impl Default for AppSettings {
         Self {
             remember_position: true,
             window_position: None,
+            scale_factor: 1.0,
         }
     }
 }
