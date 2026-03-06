@@ -37,6 +37,9 @@
   - `mod.rs`：状态模块统一导出。
 - **设置与窗口层**：
   - `src/settings/*`：设置模型、设置面板、持久化存储。
+    - `model.rs`：`AppSettings` 包含 `remember_position`（bool）和 `scale_factor`（f64，范围 0.5~2.0）。
+    - `panel.rs`：设置 UI，包含水平滑块（50%~200%）、百分比标签、恢复默认按钮。
+    - `storage.rs`：通过 `settings/user_settings.toml` 持久化缩放因子。
   - `src/window/position.rs`：窗口位置读写与应用。
 
 ### 2.2 资源分层
@@ -224,7 +227,47 @@
   - 互动导致体力降到 0 不会立即触发额外心情衰减，仍由下一次 `on_tick` 统一处理；
   - 好感超上限溢出会转换为健康恢复（上限 100）。
 
-## 7. 关键设计取舍
+## 6.4 缩放功能（Scale）
+
+宠物窗口和图片大小可动态缩放，实现视觉上的人物大小变化。缩放范围为 50%~200%，默认 100%。
+
+**缩放工作流程**：
+
+1. **初始化**：
+   - `main.rs` 启动时从 `SettingsStore::scale_factor()` 读取持久化因子（默认 1.0）。
+   - 计算 `initial_pixel_size = (DEFAULT_PIXEL_SIZE × scale_factor).round().max(32)` 传给 `load_carousel_images()`。
+   - GTK Image 控件通过 `image.set_pixel_size(pixel_size)` 确定渲染尺寸；窗口大小由内容自动决定。
+
+2. **滑块预览**：
+   - 设置面板中滑块变化时，实时调用 `on_scale_preview` 回调。
+   - 回调直接调用 `image.set_pixel_size(新尺寸)`，用户看到实时预览。
+   - 预览不会立即保存到 TOML；仅在按"保存"时才持久化。
+
+3. **恢复默认**：
+   - 点击"恢复默认"按钮将滑块重置为 100%。
+   - 不自动保存；用户仍需点"保存"确认。
+
+4. **保存与持久化**：
+   - 点"保存"时调用 `SettingsStore::update_scale_factor(factor)`。
+   - 因子写入 `settings/user_settings.toml` 的 `scale_factor` 字段。
+   - 同时触发 `stats_service` 更新（如有设置变更），并通知动画配置重新加载。
+
+5. **取消/退出/关闭**：
+   - 取消、退出或关闭面板时，滑块回滚到上次保存的值（预览被撤销）。
+   - 实时调用预览回调，确保最后看到的是已保存态。
+
+**坐标系与交互适配**：
+
+- 所有触摸区域、拖拽焦点、捏捏判定区域都基于"源图像像素"定义，使用 `widget_size / pixbuf_size` 比率自动映射到当前渲染尺寸。
+- 缩放不改变这些逻辑坐标，只改变渲染 pixel_size，因此交互命中精度不受影响。
+- 例：`focus_pixel_x = 581` (源坐标) → widget 显示宽 512px 时，映射到 widget 坐标约 342px。
+
+**输入区域刷新**：
+
+- 每帧动画 tick 时，`setup_image_input_region()` 会基于当前渲染尺寸重算 alpha 通道输入区域。
+- 缩放后 alpha 区域自动缩放，确保可点击区域始终与可见宠物范围一致。
+
+## 8. 关键设计取舍
 
 - **事件与播放解耦**：请求位 + tick 消费，降低回调复杂度。
 - **计算与渲染解耦**：`stats/model.rs` 保持纯计算，`ui/stats/panel.rs` 仅渲染，便于测试与维护。
@@ -232,7 +275,7 @@
 - **资源路径可配置**：动画目录通过 `config.toml` 管理，便于换皮/重组资源。
 - **输入区域跟帧同步**：提高交互命中精度，但会增加每帧 region 更新成本。
 
-## 8. 典型扩展点
+## 9. 典型扩展点
 
 - 新增动作：
   1. 在 `player/` 增加对应 player；
@@ -243,7 +286,7 @@
 - 配置化交互区域：可将头/身体/捏捏矩形迁移到 `config.toml`，减少硬编码常量。
 
 
-## 9. 动画链路与配置（2026-03）
+## 10. 动画链路与配置（2026-03）
 
 - IDEL/State 动画已重新接入，支持三段式（A_Start/B_Loop/C_End/Single）与 StateONE <-> StateTWO 循环。
 - 资源路径可配置：`idel_root`、`state_root`、`switch_up_root`、`switch_down_root`，详见 config.toml。
@@ -252,6 +295,6 @@
 - 逻辑定时器每 15 秒触发，按概率分支进入 Idle/State/Move/Sleep/RandomInteraction。
 - 模式切换时自动播放 Switch_Up/Down 过渡动画，逐级递归，结束回 Default。
 
-## 10. 当前架构一句话总结
+## 11. 当前架构一句话总结
 
 该项目采用“GTK 主线程 + 双定时器（动画/状态） + 原子请求队列 + 多播放器状态机 + 可配置资源路径”的结构，在保持交互响应的同时，实现了可热更、可扩展的桌宠动画系统。
