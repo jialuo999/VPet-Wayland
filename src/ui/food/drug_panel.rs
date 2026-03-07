@@ -3,6 +3,7 @@ use gtk4::{
     Align, Application, ApplicationWindow, Box, Button, CssProvider, FlowBox, Image, Label,
     Orientation, ScrolledWindow, SelectionMode, Window, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -24,10 +25,15 @@ const ITEM_NAME_SCROLL_GAP_CHARS: usize = 4;
 const ITEM_NAME_SCROLL_INTERVAL_MS: u64 = 240;
 const ITEM_NAME_VIEWPORT_WIDTH: i32 = 72;
 const ITEM_NAME_VIEWPORT_HEIGHT: i32 = 18;
+const SIDEBAR_WIDTH: i32 = 28;
+const SIDEBAR_BUTTON_HEIGHT: i32 = 44;
+const CONTENT_ROW_SPACING: i32 = 8;
+const FLOWBOX_COLUMN_SPACING: u32 = 3;
+const FLOWBOX_ROW_SPACING: u32 = 6;
 // FlowBox 默认每行子项数量有上限（通常为 7），显式放宽避免窗口变宽后列数不再增加。
 const FLOWBOX_MAX_COLUMNS: u32 = 64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FeedCategory {
     Meal,
     Drink,
@@ -38,6 +44,19 @@ pub enum FeedCategory {
 }
 
 impl FeedCategory {
+    const ALL: [Self; 6] = [
+        Self::Meal,
+        Self::Drink,
+        Self::Snack,
+        Self::Gift,
+        Self::Drug,
+        Self::Functional,
+    ];
+
+    fn all() -> &'static [Self] {
+        &Self::ALL
+    }
+
     pub fn from_menu_label(label: &str) -> Option<Self> {
         match label {
             "主食" => Some(Self::Meal),
@@ -47,6 +66,17 @@ impl FeedCategory {
             "药物" => Some(Self::Drug),
             "功能" => Some(Self::Functional),
             _ => None,
+        }
+    }
+
+    fn menu_label(self) -> &'static str {
+        match self {
+            Self::Meal => "主食",
+            Self::Drink => "饮品",
+            Self::Snack => "零食",
+            Self::Gift => "礼物",
+            Self::Drug => "药物",
+            Self::Functional => "功能",
         }
     }
 
@@ -101,6 +131,13 @@ impl FeedCategory {
 
 pub struct FeedPanel {
     window: Window,
+    title: Label,
+    status_label: Label,
+    flow: FlowBox,
+    current_category: Rc<Cell<FeedCategory>>,
+    stats_service: PetStatsService,
+    on_after_use: Rc<dyn Fn()>,
+    category_buttons: HashMap<FeedCategory, Button>,
 }
 
 impl FeedPanel {
@@ -136,8 +173,22 @@ impl FeedPanel {
                     max-height: {}px;\n\
                     padding: 0;\n\
                     margin: 0;\n\
+                }}\n\
+                .feed-sidebar-button,\n\
+                .feed-sidebar-button:hover,\n\
+                .feed-sidebar-button:active,\n\
+                .feed-sidebar-button:checked {{\n\
+                    min-width: {}px;\n\
+                    max-width: {}px;\n\
+                    padding-left: 2px;\n\
+                    padding-right: 2px;\n\
                 }}",
-                ITEM_CELL_WIDTH, ITEM_CELL_WIDTH, ITEM_CELL_HEIGHT, ITEM_CELL_HEIGHT
+                ITEM_CELL_WIDTH,
+                ITEM_CELL_WIDTH,
+                ITEM_CELL_HEIGHT,
+                ITEM_CELL_HEIGHT,
+                SIDEBAR_WIDTH,
+                SIDEBAR_WIDTH
             ),
         );
         window
@@ -151,20 +202,26 @@ impl FeedPanel {
         panel_box.set_margin_end(12);
 
         let title = Label::new(Some(category.panel_title()));
-        title.set_halign(Align::Start);
+        title.set_halign(Align::Center);
+        title.set_justify(gtk4::Justification::Center);
         panel_box.append(&title);
 
         let status_label = Label::new(Some("点击物品可立即生效"));
-        status_label.set_halign(Align::Start);
+        status_label.set_halign(Align::Center);
+        status_label.set_justify(gtk4::Justification::Center);
         panel_box.append(&status_label);
+
+        let content_row = Box::new(Orientation::Horizontal, CONTENT_ROW_SPACING);
+        content_row.set_hexpand(true);
+        content_row.set_vexpand(true);
 
         let scroll = ScrolledWindow::new();
         scroll.set_hexpand(true);
         scroll.set_vexpand(true);
 
         let flow = FlowBox::new();
-        flow.set_column_spacing(10);
-        flow.set_row_spacing(10);
+        flow.set_column_spacing(FLOWBOX_COLUMN_SPACING);
+        flow.set_row_spacing(FLOWBOX_ROW_SPACING);
         flow.set_selection_mode(SelectionMode::None);
         // 固定 FlowBox 子项为统一网格尺寸，避免文本自然宽度影响每个单元格大小。
         flow.set_homogeneous(true);
@@ -172,28 +229,30 @@ impl FeedPanel {
         flow.set_vexpand(false);
         flow.set_max_children_per_line(FLOWBOX_MAX_COLUMNS);
 
-        let image_paths = list_png_files(category.image_dir());
-        let item_map = load_items(category);
+        scroll.set_child(Some(&flow));
 
-        if image_paths.is_empty() {
-            let empty = Label::new(Some("未找到图片资源"));
-            empty.set_halign(Align::Start);
-            scroll.set_child(Some(&empty));
-        } else {
-            for path in &image_paths {
-                let cell = build_item_cell(
-                    path,
-                    &item_map,
-                    stats_service.clone(),
-                    on_after_use.clone(),
-                    &status_label,
-                );
-                flow.insert(&cell, -1);
-            }
-            scroll.set_child(Some(&flow));
+        let sidebar = Box::new(Orientation::Vertical, 6);
+        sidebar.set_valign(Align::Start);
+        sidebar.set_halign(Align::Start);
+        sidebar.set_hexpand(false);
+        sidebar.set_width_request(SIDEBAR_WIDTH);
+
+        let mut category_buttons = HashMap::new();
+        for side_category in FeedCategory::all() {
+            let button = Button::with_label(side_category.menu_label());
+            button.add_css_class("feed-sidebar-button");
+            button.set_halign(Align::Start);
+            button.set_hexpand(false);
+            button.set_width_request(SIDEBAR_WIDTH);
+            button.set_height_request(SIDEBAR_BUTTON_HEIGHT);
+            sidebar.append(&button);
+            category_buttons.insert(*side_category, button);
         }
 
-        panel_box.append(&scroll);
+        content_row.append(&sidebar);
+        content_row.append(&scroll);
+        panel_box.append(&content_row);
+
 
         let actions_box = Box::new(Orientation::Horizontal, 8);
         actions_box.set_halign(Align::End);
@@ -218,23 +277,113 @@ impl FeedPanel {
             });
         }
 
-        Self { window }
+        let panel = Self {
+            window,
+            title,
+            status_label,
+            flow,
+            current_category: Rc::new(Cell::new(category)),
+            stats_service,
+            on_after_use,
+            category_buttons,
+        };
+
+        panel.connect_sidebar_handlers();
+        panel.switch_category(category);
+
+        panel
     }
 
     pub fn present(&self) {
         self.window.present();
     }
 
-    pub fn toggle(&self) {
-        if self.window.is_visible() {
+    pub fn toggle_category(&self, category: FeedCategory) {
+        if self.window.is_visible() && self.current_category.get() == category {
             self.window.hide();
-        } else {
-            self.present();
+            return;
         }
+
+        self.switch_category(category);
+        self.present();
+    }
+
+    pub fn switch_category(&self, category: FeedCategory) {
+        self.current_category.set(category);
+        self.window.set_title(Some(category.panel_title()));
+        self.title.set_text(category.panel_title());
+        self.status_label.set_text("点击物品可立即生效");
+        self.refresh_sidebar_state();
+        self.reload_items_for(category);
     }
 
     pub fn hide(&self) {
         self.window.hide();
+    }
+
+    fn connect_sidebar_handlers(&self) {
+        for side_category in FeedCategory::all() {
+            if let Some(button) = self.category_buttons.get(side_category) {
+                let panel = self.clone_ref();
+                let target = *side_category;
+                button.connect_clicked(move |_| {
+                    panel.switch_category(target);
+                });
+            }
+        }
+    }
+
+    fn refresh_sidebar_state(&self) {
+        let current = self.current_category.get();
+        for side_category in FeedCategory::all() {
+            if let Some(button) = self.category_buttons.get(side_category) {
+                if *side_category == current {
+                    button.add_css_class("suggested-action");
+                } else {
+                    button.remove_css_class("suggested-action");
+                }
+            }
+        }
+    }
+
+    fn reload_items_for(&self, category: FeedCategory) {
+        while let Some(child) = self.flow.first_child() {
+            self.flow.remove(&child);
+        }
+
+        let image_paths = list_png_files(category.image_dir());
+        let item_map = load_items(category);
+
+        if image_paths.is_empty() {
+            let empty = Label::new(Some("未找到图片资源"));
+            empty.set_halign(Align::Center);
+            self.flow.insert(&empty, -1);
+            return;
+        }
+
+        for path in &image_paths {
+            let cell = build_item_cell(
+                path,
+                &item_map,
+                self.stats_service.clone(),
+                self.on_after_use.clone(),
+                &self.status_label,
+            );
+            self.flow.insert(&cell, -1);
+        }
+    }
+
+    fn clone_ref(&self) -> Self {
+        Self {
+            window: self.window.clone(),
+            title: self.title.clone(),
+            status_label: self.status_label.clone(),
+            flow: self.flow.clone(),
+            current_category: self.current_category.clone(),
+            stats_service: self.stats_service.clone(),
+            on_after_use: self.on_after_use.clone(),
+            category_buttons: self.category_buttons.clone(),
+        }
     }
 }
 

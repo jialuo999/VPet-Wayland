@@ -144,45 +144,10 @@ fn build_ui(app: &Application) {
         })
     };
 
-    let meal_panel = Rc::new(FeedPanel::new(
+    let feed_panel = Rc::new(FeedPanel::new(
         app,
         &window,
         FeedCategory::Meal,
-        stats_service.clone(),
-        on_after_feed_use.clone(),
-    ));
-    let drink_panel = Rc::new(FeedPanel::new(
-        app,
-        &window,
-        FeedCategory::Drink,
-        stats_service.clone(),
-        on_after_feed_use.clone(),
-    ));
-    let snack_panel = Rc::new(FeedPanel::new(
-        app,
-        &window,
-        FeedCategory::Snack,
-        stats_service.clone(),
-        on_after_feed_use.clone(),
-    ));
-    let gift_panel = Rc::new(FeedPanel::new(
-        app,
-        &window,
-        FeedCategory::Gift,
-        stats_service.clone(),
-        on_after_feed_use.clone(),
-    ));
-    let drug_panel = Rc::new(FeedPanel::new(
-        app,
-        &window,
-        FeedCategory::Drug,
-        stats_service.clone(),
-        on_after_feed_use.clone(),
-    ));
-    let functional_panel = Rc::new(FeedPanel::new(
-        app,
-        &window,
-        FeedCategory::Functional,
         stats_service.clone(),
         on_after_feed_use,
     ));
@@ -281,19 +246,8 @@ fn build_ui(app: &Application) {
     {
         let stats_panel_for_panel_click = stats_panel.clone();
         let stats_panel_for_menu_popup = stats_panel.clone();
-        let meal_panel_for_menu = meal_panel.clone();
-        let drink_panel_for_menu = drink_panel.clone();
-        let snack_panel_for_menu = snack_panel.clone();
-        let gift_panel_for_menu = gift_panel.clone();
-        let drug_panel_for_menu = drug_panel.clone();
-        let functional_panel_for_menu = functional_panel.clone();
-
-        let meal_panel_for_hide = meal_panel.clone();
-        let drink_panel_for_hide = drink_panel.clone();
-        let snack_panel_for_hide = snack_panel.clone();
-        let gift_panel_for_hide = gift_panel.clone();
-        let drug_panel_for_hide = drug_panel.clone();
-        let functional_panel_for_hide = functional_panel.clone();
+        let feed_panel_for_menu = feed_panel.clone();
+        let feed_panel_for_hide = feed_panel.clone();
         let settings_panel_for_menu_popup = {
             let settings_store = settings_store.clone();
             let window_for_save = window.clone();
@@ -421,12 +375,7 @@ fn build_ui(app: &Application) {
             }),
             Rc::new(move |menu_label| {
                 match FeedCategory::from_menu_label(menu_label) {
-                    Some(FeedCategory::Meal) => meal_panel_for_menu.toggle(),
-                    Some(FeedCategory::Drink) => drink_panel_for_menu.toggle(),
-                    Some(FeedCategory::Snack) => snack_panel_for_menu.toggle(),
-                    Some(FeedCategory::Gift) => gift_panel_for_menu.toggle(),
-                    Some(FeedCategory::Drug) => drug_panel_for_menu.toggle(),
-                    Some(FeedCategory::Functional) => functional_panel_for_menu.toggle(),
+                    Some(category) => feed_panel_for_menu.toggle_category(category),
                     None => {}
                 }
             }),
@@ -440,12 +389,7 @@ fn build_ui(app: &Application) {
                 let settings_panel_for_menu_popup = settings_panel_for_menu_popup.clone();
                 Rc::new(move || {
                     stats_panel_for_menu_popup.hide();
-                    meal_panel_for_hide.hide();
-                    drink_panel_for_hide.hide();
-                    snack_panel_for_hide.hide();
-                    gift_panel_for_hide.hide();
-                    drug_panel_for_hide.hide();
-                    functional_panel_for_hide.hide();
+                    feed_panel_for_hide.hide();
                     settings_panel_for_menu_popup.hide();
                 })
             },
@@ -464,23 +408,13 @@ fn build_ui(app: &Application) {
     {
         let settings_store_for_dismiss = settings_store.clone();
         let stats_panel = stats_panel.clone();
-        let meal_panel = meal_panel.clone();
-        let drink_panel = drink_panel.clone();
-        let snack_panel = snack_panel.clone();
-        let gift_panel = gift_panel.clone();
-        let drug_panel = drug_panel.clone();
-        let functional_panel = functional_panel.clone();
+        let feed_panel = feed_panel.clone();
         dismiss_panel_click.connect_pressed(move |_, _, _, _| {
             if !settings_store_for_dismiss.auto_close_panels_on_outside_click() {
                 return;
             }
             stats_panel.hide();
-            meal_panel.hide();
-            drink_panel.hide();
-            snack_panel.hide();
-            gift_panel.hide();
-            drug_panel.hide();
-            functional_panel.hide();
+            feed_panel.hide();
         });
     }
     image.add_controller(dismiss_panel_click);
